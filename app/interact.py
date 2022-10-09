@@ -87,6 +87,7 @@ class Crawler:
                     #다음 페이지가 존재하지 않으면 stop
                     if end:
                         break
+                    url = f"https://www.acmicpc.net/status?problem_id={data['problemId']}&top={next_page_submit_id}"
             
                 pbar.close()
 
