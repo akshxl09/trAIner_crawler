@@ -16,7 +16,8 @@ class Crawler:
 
 
     def get_problem(self):
-        for data in self.local['solved_ac']['problem'].find():
+        problems = list(self.local['solved_ac']['problem'].find())
+        for data in problems:
             cur = self.prod['Jarvis']['interact_config'].find_one({'problemId': data['problemId']})
             if cur:
                 count = cur['count']
