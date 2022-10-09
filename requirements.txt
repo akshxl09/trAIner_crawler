@@ -1,6 +1,7 @@
 beautifulsoup4==4.11.1
 certifi==2022.9.24
 charset-normalizer==2.1.1
+dnspython==2.2.1
 idna==3.4
 pymongo==4.2.0
 python-dotenv==0.21.0

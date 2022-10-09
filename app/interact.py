@@ -1,3 +1,4 @@
+import os
 import random
 import requests
 from tqdm import tqdm
@@ -7,15 +8,16 @@ from pymongo import MongoClient
 
 
 class Crawler:
-    def __init__(self, headers, database, size):
+    def __init__(self, headers, local_database, prod_database, size):
         self.headers = headers
-        self.db = database
+        self.local = local_database
+        self.prod = prod_database
         self.size = size
 
 
     def get_problem(self):
-        for data in self.db['solved_ac']['problem'].find():
-            cur = self.db['solved_ac']['interact_config'].find_one({'problemId': data['problemId']})
+        for data in self.local['solved_ac']['problem'].find():
+            cur = self.prod['Jarvis']['interact_config'].find_one({'problemId': data['problemId']})
             if cur:
                 count = cur['count']
                 url = f"https://www.acmicpc.net/status?problem_id={cur['problemId']}&top={cur['top']}"
@@ -58,7 +60,7 @@ class Crawler:
                         """
                         if cur and int(cur['currentSubmitId']) <= int(status[0]):
                             continue
-                        self.db['solved_ac']['interact'].insert_one({
+                        self.prod['Jarvis']['interact'].insert_one({
                             'submitId': status[0],
                             'userId': status[1],
                             'problemId': status[2],
@@ -71,7 +73,7 @@ class Crawler:
                         })
                         count += 1
                         pbar.update(1)
-                        self.db['solved_ac']['interact_config'].update_one(
+                        self.prod['Jarvis']['interact_config'].update_one(
                             {'problemId': data['problemId']},
                             { '$set': {
                                     'currentSubmitId': status[0],
@@ -89,12 +91,15 @@ class Crawler:
 
 
 if __name__ == '__main__':
+    from dotenv import load_dotenv
+    load_dotenv(verbose=True)
     headers = {
         'User-Agent': "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36"
     }
     crawler = Crawler(
         headers=headers,
-        database=MongoClient("mongodb://localhost:27017/"),
+        local_database=MongoClient(os.environ['LOCAL_DB']),
+        prod_database=MongoClient(os.environ['REAL_DB']),
         size=1000
     )
 
