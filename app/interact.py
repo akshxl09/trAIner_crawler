@@ -109,6 +109,7 @@ class Crawler:
             
             user_cnt += 1
             print(f"전체 {total_user_cnt}명의 유저 중 {user_cnt}번 째 유저 '{user['userId']}' 수집중")
+            total_skip = 0
             while not end:
                 sleep(random.uniform(0.5, 2))
                 response = requests.get(url, headers=self.headers)
@@ -141,20 +142,20 @@ class Crawler:
                     """
                     if 'top' in cur.keys() and int(cur['currentSubmitId']) <= int(status[0]):
                         continue
-                    self.prod['Jarvis']['interact'].update_one(
-                        {'submitId': status[0]},
-                        { '$set': {
-                                'userId': status[1],
-                                'problemId': status[2],
-                                'result': status[3],
-                                'memory': status[4],
-                                'time': status[5],
-                                'language': status[6],
-                                'codeLength': status[7],
-                                'timestamp': status[8]
-                            }
-                        }
-                    )
+                    if self.prod['Jarvis']['interact'].find_one({'submitId': status[0]}):
+                        total_skip += 1
+                    else:
+                        self.prod['Jarvis']['interact'].insert_one({
+                            'submitId': status[0],
+                            'userId': status[1],
+                            'problemId': status[2],
+                            'result': status[3],
+                            'memory': status[4],
+                            'time': status[5],
+                            'language': status[6],
+                            'codeLength': status[7],
+                            'timestamp': status[8]
+                        })
                     count += 1
                     self.prod['Jarvis']['user'].update_one(
                         {'userId': user['userId']},
@@ -166,6 +167,11 @@ class Crawler:
                             }
                         }, upsert=True
                     )
+            print(f"\
+                전체 interact: {count}개\n\
+                스킵한 interact: {total_skip}개\n\
+                추가된 interact: {count-total_skip}개\n\
+            ")
 
 
 if __name__ == '__main__':
