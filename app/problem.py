@@ -1,6 +1,8 @@
 import os
+import sys
 import random
 import requests
+from tqdm import tqdm
 from time import sleep
 from bs4 import BeautifulSoup
 from pymongo import MongoClient
@@ -9,12 +11,17 @@ from pymongo import MongoClient
 class Crawler:
     def __init__(self, headers, database):
         self.headers = headers
-        self.db = database
+        self.db = database['Jarvis']
 
-
+    
     def get_problem(self):
-        problems = self.db['solved_ac']['problem'].find()
+        problems = list(self.db['problem'].find())
+        pbar = tqdm(total=len(problems))
         for data in problems:
+            #이미 수집한 문제는 넘어감
+            if 'description' in data.keys():
+                pbar.update(1)
+                continue
             url = f"https://www.acmicpc.net/problem/{data['problemId']}"
             sleep(random.uniform(0.5, 2))
             response = requests.get(url, headers=self.headers)
@@ -27,43 +34,77 @@ class Crawler:
                 info.append(io.text)
             #문제 설명
             description = soup.select_one('#problem_description')
+            for a in description.select('a'):
+                a.unwrap()
             #입력
             input = soup.select_one('#problem_input')
+            for a in input.select('a'):
+                a.unwrap()
             #출력
             output = soup.select_one('#problem_output')
+            for a in output.select('a'):
+                a.unwrap()
+            #제한
+            limit_parent = soup.select_one('#limit')
+            if (
+                limit_parent.has_attr('style') and 
+                limit_parent['style'].replace(' ', '') == "display:none;"
+            ):
+                limit = None
+            else:
+                limit = soup.select_one('#problem_limit')
+                for a in limit.select('a'):
+                    a.unwrap()
+            #노트 (힌트)
+            note_parent = soup.select_one('#hint')
+            if (
+                note_parent.has_attr('style') and 
+                note_parent['style'].replace(' ', '') == "display:none;"
+            ):
+                note = None
+            else:
+                note = soup.select_one('#problem_hint')
+                for a in note.select('a'):
+                    a.unwrap()
             #예제 입력, 출력
             #TODO: 예제 입력 출력은 다양하게 여러가지일 수 있으니 조사 필요
-            i = 0
-            ex_input = []
-            ex_output = []
+            example = []
+            cnt = 1
             while True:
-                i += 1
-                ex_in = soup.select_one(f'#sample-input-{i}')
-                ex_out = soup.select_one(f'#sample-output-{i}')
-                if ex_in and ex_out:
-                    ex_input.append(ex_in.text)
-                    ex_output.append(ex_out.text)
-                else:
+                sample_input = soup.select_one(f"#sample-input-{cnt}")
+                sample_output = soup.select_one(f"#sample-output-{cnt}")
+                sample_explain = soup.select_one(f"#problem_sample_explain_{cnt}")
+                if not sample_input:
                     break
+                if sample_explain:
+                    for a in sample_explain.select('a'):
+                        a.unwrap()
+                example.append({
+                    'sample_input': sample_input.text,
+                    'sample_output': sample_output.text,
+                    'sample_explain': str(sample_explain) if sample_explain else None
+                })
+                cnt += 1
                     
             result = {
-                'timeLimit': info[0].replace(' ', ''),
-                'memoryLimit': info[1],
-                'submit': info[2],
-                'correct': info[3],
-                'correctPeople': info[4],
-                'correctPecent': info[5],
-                'description': description,
-                'input': input,
-                'output': output,
-                'ex_input': ex_input,
-                'ex_output': ex_output
+                'timeLimit': float(info[0].replace(' ', '').replace('초', '')),
+                'memoryLimit': int(info[1].replace(' ', '').replace('MB', '')),
+                'submit': int(info[2]),
+                'correct': int(info[3]),
+                'correctPeople': int(info[4]),
+                'correctPecent': float(info[5].replace(' ', '').replace('%', '')),
+                'description': str(description),
+                'input': str(input),
+                'output': str(output),
+                'example': example,
+                'limit': str(limit) if limit else None,
+                'note': str(note) if note else None
             }
-            print(f"problem {data['problemId']}")
-            from pprint import pprint
-            pprint(result)
+            self.db['test'].insert_one(result)
+            pbar.update(1)
+        pbar.close()
 
-    
+
     def test(self, problem):
         url = f"https://www.acmicpc.net/problem/{problem}"
         sleep(random.uniform(0.5, 2))
@@ -77,41 +118,76 @@ class Crawler:
             info.append(io.text)
         #문제 설명
         description = soup.select_one('#problem_description')
+        for a in description.select('a'):
+            a.unwrap()
         #입력
         input = soup.select_one('#problem_input')
+        for a in input.select('a'):
+            a.unwrap()
         #출력
         output = soup.select_one('#problem_output')
+        for a in output.select('a'):
+            a.unwrap()
+        #제한
+        limit_parent = soup.select_one('#limit')
+        if (
+            limit_parent.has_attr('style') and 
+            limit_parent['style'].replace(' ', '') == "display:none;"
+        ):
+            limit = None
+        else:
+            limit = soup.select_one('#problem_limit')
+            for a in limit.select('a'):
+                a.unwrap()
+        #노트 (힌트)
+        note_parent = soup.select_one('#hint')
+        if (
+            note_parent.has_attr('style') and 
+            note_parent['style'].replace(' ', '') == "display:none;"
+        ):
+            note = None
+        else:
+            note = soup.select_one('#problem_hint')
+            for a in note.select('a'):
+                a.unwrap()
         #예제 입력, 출력
         #TODO: 예제 입력 출력은 다양하게 여러가지일 수 있으니 조사 필요
-        i = 0
-        ex_input = []
-        ex_output = []
+        example = []
+        cnt = 1
         while True:
-            i += 1
-            ex_in = soup.select_one(f'#sample-input-{i}')
-            ex_out = soup.select_one(f'#sample-output-{i}')
-            if ex_in and ex_out:
-                ex_input.append(ex_in)
-                ex_output.append(ex_out)
-            else:
+            sample_input = soup.select_one(f"#sample-input-{cnt}")
+            sample_output = soup.select_one(f"#sample-output-{cnt}")
+            sample_explain = soup.select_one(f"#problem_sample_explain_{cnt}")
+            if not sample_input:
                 break
+            if sample_explain:
+                for a in sample_explain.select('a'):
+                    a.unwrap()
+            example.append({
+                'sample_input': sample_input.text,
+                'sample_output': sample_output.text,
+                'sample_explain': str(sample_explain) if sample_explain else None
+            })
+            cnt += 1
                 
         result = {
-            'timeLimit': info[0].replace(' ', ''),
-            'memoryLimit': info[1],
-            'submit': info[2],
-            'correct': info[3],
-            'correctPeople': info[4],
-            'correctPecent': info[5],
-            'description': description,
-            'input': input,
-            'output': output,
-            'ex_input': ex_input,
-            'ex_output': ex_output
+            'timeLimit': float(info[0].replace(' ', '').replace('초', '')),
+            'memoryLimit': int(info[1].replace(' ', '').replace('MB', '')),
+            'submit': int(info[2]),
+            'correct': int(info[3]),
+            'correctPeople': int(info[4]),
+            'correctPecent': float(info[5].replace(' ', '').replace('%', '')),
+            'description': str(description),
+            'input': str(input),
+            'output': str(output),
+            'example': example,
+            'limit': str(limit) if limit else None,
+            'note': str(note) if note else None
         }
-        from pprint import pprint
-        pprint(result)
-    
+        self.db['test'].insert_one(result)
+
+
+
 """
 
 백준 문제 url: https://www.acmicpc.net/problem/1000
@@ -133,7 +209,7 @@ if __name__ == '__main__':
     }
     crawler = Crawler(
         headers=headers,
-        database=MongoClient(os.environ['LOCAL_DB'])
+        database=MongoClient(os.environ['REAL_DB'])
     )
 
     crawler.test(23290)
