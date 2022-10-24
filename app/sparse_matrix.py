@@ -40,7 +40,50 @@ class SparseMatrix:
                     [user['userNumber'], problem['problemId'], rating]
                 )
         pbar.close()
-        
+    
+
+    def sparse_matrix_v2(self):
+        """interact가 있고, 힘겹게 풀어서 맞췄을 경우(5번 이상 실패) 2, 없으면 0"""
+        users = list(self.db['user'].find())
+        problems = list(self.db['problem'].find({"isHotProblem": True}))
+
+        pbar = tqdm(total=len(users)*len(problems))
+        for user in users:
+            for problem in problems:
+                pbar.update(1)
+                if self.db['interact'].find_one({
+                    "$and": [
+                        {"userId": user['userId']},
+                        {"problemId": str(problem['problemId'])}
+                    ]
+                }):
+                    rating = 1
+                    fail = list(self.db['interact'].find({
+                            "$and": [
+                            {"userId": user['userId']},
+                            {"problemId": str(problem['problemId'])},
+                            {"result": {"$not": {"$regex": "(맞았습니다!!|컴파일 에러)"}}}
+                        ]
+                    }))
+                    if len(fail) >= 5:
+                        if self.db['interact'].find_one({
+                                "$and": [
+                                {"userId": user['userId']},
+                                {"problemId": str(problem['problemId'])},
+                                {"result": {"$regex": "맞았습니다!!"}}
+                            ]
+                        }):
+                            rating = 2
+                else:
+                    rating = 0
+
+                self.wr.writerow(
+                    [user['userNumber'], problem['problemId'], rating]
+                )
+        pbar.close()
+
+
+
     
     def test(self):
         self.db['test'].insert_one({'test': True})
@@ -53,8 +96,9 @@ if __name__ == '__main__':
 
     matrix = SparseMatrix(
         database=MongoClient(os.environ['LOCAL_DB']),
-        file_name="sparse_matrix_v1"
+        file_name="sparse_matrix_v2"
     )
 
     #matrix.test()
-    matrix.sparse_matrix_v1()
+    #matrix.sparse_matrix_v1()
+    matrix.sparse_matrix_v2()
