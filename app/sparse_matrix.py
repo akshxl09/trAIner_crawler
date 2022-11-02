@@ -314,6 +314,199 @@ class SparseMatrix:
         plt.grid(True)
         plt.show()
 
+    
+    def get_hot_problem_tier(self):
+        """
+        핫 문제 티어 비율 분석
+        """
+
+        tier = {
+            'bronze': [1, 2, 3, 4, 5],
+            'silver': [6, 7, 8, 9, 10],
+            'gold': [11, 12, 13, 14, 15]
+        }
+        hot_problem = list(self.db['problem'].find({"isHotProblem": True}))
+        total = len(hot_problem)
+        bronze = 0
+        silver = 0
+        gold = 0
+        etc = 0
+        for p in hot_problem:
+            if p['level'] in tier['bronze']:
+                bronze += 1
+            elif p['level'] in tier['silver']:
+                silver += 1
+            elif p['level'] in tier['gold']:
+                gold += 1
+            else:
+                etc += 1
+        
+        print(f"total: {total}, bronze: {bronze}, silver: {silver}, gold: {gold}, wrong: {etc}")
+        print(f"bronze: {bronze/total*100}, silver: {silver/total*100}, gold: {gold/total*100}, wrong: {etc}")
+    
+    def get_average_failure_tier(self):
+        """
+        티어별로 평균적으로 틀리는 횟수 집계
+        """
+
+        tier = {}
+        for i in range(1, 16):
+            if i in (1,2,3,4,5):
+                tier[i]='bronze'
+            elif i in (6,7,8,9,10):
+                tier[i]='silver'
+            else:
+                tier[i]='gold'
+
+        users = list(self.db['user'].find())
+        problems = list(self.db['problem'].find({"isHotProblem": True}))
+        user_ids = [user['userId'] for user in users]
+        problem_ids = [str(problem['problemId']) for problem in problems]
+
+        print('interact 집계중..')
+        result = list(self.db['interact'].find({
+            "$and": [
+                {"userId": {"$in": user_ids}},
+                {"problemId": {"$in": problem_ids}}
+            ]
+        }))
+        tier_map = {}
+        for i in problems:
+            tier_map[str(i['problemId'])] = tier[i['level']]
+
+        interact = defaultdict(dict)
+        for i in result:
+            if tier_map[i['problemId']] not in interact[i['userId']].keys():
+                success = 0
+                fail = 0
+                if i['result'] != "맞았습니다!!":
+                    fail = 1
+                elif i['result'] == "맞았습니다!!":
+                    success = 1
+                interact[i['userId']][tier_map[i['problemId']]] = {'success': success, 'fail': fail}
+            else:
+                if i['result'] != "맞았습니다!!":
+                    interact[i['userId']][tier_map[i['problemId']]]['fail'] += 1
+                elif i['result'] == "맞았습니다!!":
+                    interact[i['userId']][tier_map[i['problemId']]]['success'] += 1
+
+        tmp = {'bronze':0, 'silver': 0, 'gold': 0}
+        total_user = len(users)
+        for user in users:
+            for tier in ('bronze', 'silver', 'gold'):
+                if tier in interact[user['userId']].keys():
+                    tmp[tier] += interact[user['userId']][tier]['fail']
+        
+        print(f"유저들의 평균 실패 횟수: bronze: {tmp['bronze']/(total_user)}, silver: {tmp['silver']/(total_user)}, gold: {tmp['gold']/(total_user)}")
+
+
+    def get_average_failure_tier_v2(self):
+        users = list(self.db['user'].find())
+        problems = list(self.db['problem'].find({"isHotProblem": True}))
+        user_ids = [user['userId'] for user in users]
+        problem_ids = [str(problem['problemId']) for problem in problems]
+
+        print('interact 집계중...')
+        result = list(self.db['interact'].find({
+            "$and": [
+                {"userId": {"$in": user_ids}},
+                {"problemId": {"$in": problem_ids}}
+            ]
+        }))
+        print('interact 집계 완료')
+
+        tier = {}
+        for i in range(1, 16):
+            if i in (1,2,3,4,5):
+                tier[i]='bronze'
+            elif i in (6,7,8,9,10):
+                tier[i]='silver'
+            else:
+                tier[i]='gold'
+        tier_map = {}
+        for i in problems:
+            tier_map[str(i['problemId'])] = tier[i['level']]
+        
+        interact = defaultdict(dict)
+        for i in result:
+            if i['problemId'] not in interact.keys():
+                success = 0
+                fail = 0
+                if i['result'] != "맞았습니다!!":
+                    fail = 1
+                elif i['result'] == "맞았습니다!!":
+                    success = 1
+                interact[i['problemId']]['tier'] = tier_map[i['problemId']]
+                interact[i['problemId']]['success'] = success
+                interact[i['problemId']]['fail'] = fail
+                interact[i['problemId']]['user'] = set({i['userId']})
+            else:
+                if i['result'] != "맞았습니다!!":
+                    interact[i['problemId']]['fail'] += 1
+                elif i['result'] == "맞았습니다!!":
+                    interact[i['problemId']]['success'] += 1
+                interact[i['problemId']]['user'].add(i['userId'])
+                
+        tier_dict = {}
+        for t in ('bronze', 'silver', 'gold'):
+            tier_dict[t] = {'sum_problem_avg': 0, 'problem_cnt': 0}
+        
+        for i in interact.items():
+            tier_dict[i[1]['tier']]['problem_cnt'] += 1
+            tier_dict[i[1]['tier']]['sum_problem_avg'] += i[1]['fail'] / len(i[1]['user'])
+        
+        for t in ('bronze', 'silver', 'gold'):
+            print(f"{t}: {tier_dict[t]['sum_problem_avg']/tier_dict[t]['problem_cnt']}")
+
+
+    def get_average_failure_tier_v3(self):
+        users = list(self.db['user'].find())
+        problems = list(self.db['problem'].find({"isHotProblem": True}))
+        user_ids = [user['userId'] for user in users]
+        problem_ids = [str(problem['problemId']) for problem in problems]
+        level_map = {str(i['problemId']): i['level'] for i in problems}
+
+        print('interact 집계중...')
+        interactions = list(self.db['interact'].find({
+            "$and": [
+                {"userId": {"$in": user_ids}},
+                {"problemId": {"$in": problem_ids}}
+            ]
+        }))
+        print("총 인터렉션 수:", len(interactions))
+
+        inter_dict = defaultdict(lambda: {'success': 0, 'fail': 0, "users": set()})
+        for i in interactions:
+            inter_dict[i['problemId']]['success'] += i['result'] == "맞았습니다!!"
+            inter_dict[i['problemId']]['fail'] += i['result'] != "맞았습니다!!"
+            inter_dict[i['problemId']]['users'].add(i['userId'])
+            if level_map[i['problemId']] <= 5:
+                inter_dict[i['problemId']]['tier'] = "B"
+            elif level_map[i['problemId']] <= 10:
+                inter_dict[i['problemId']]['tier'] = "S"
+            elif level_map[i['problemId']] <= 15:
+                inter_dict[i['problemId']]['tier'] = "G"
+            else:
+                raise RuntimeError("Level Except")
+
+        tier_dict = {
+            'B': {'fail': 0, 'users': 0},
+            'S': {'fail': 0, 'users': 0},
+            'G': {'fail': 0, 'users': 0}
+        }
+
+        for problem_id in inter_dict:
+            value = inter_dict[problem_id]
+            tier_dict[value['tier']]['fail'] += value['fail']
+            tier_dict[value['tier']]['users'] += len(value['users'])
+        
+        for tier in tier_dict:
+            value = tier_dict[tier]
+            print(f"{tier}: {value['fail'] / value['users']}")
+        
+        print(tier_dict)
+
+
 if __name__ == '__main__':
     from dotenv import load_dotenv
     load_dotenv(verbose=True)
@@ -323,5 +516,6 @@ if __name__ == '__main__':
         file_name="sparse_matrix_v4"
     )
 
-    matrix.sparse_matrix_v4()
+    #matrix.sparse_matrix_v4()
     #matrix.get_average_failure()
+    matrix.get_average_failure_tier_v2()
