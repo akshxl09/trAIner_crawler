@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 from pymongo import MongoClient
 
 
-class Crawler:
+class ProblemCrawler:
     def __init__(self, headers, database):
         self.headers = headers
         self.db = database['Jarvis']
@@ -207,7 +207,7 @@ if __name__ == '__main__':
     headers = {
         'User-Agent': "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36"
     }
-    crawler = Crawler(
+    crawler = ProblemCrawler(
         headers=headers,
         database=MongoClient(os.environ['REAL_DB'])
     )

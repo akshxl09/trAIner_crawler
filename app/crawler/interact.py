@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from pymongo import MongoClient
 
 
-class Crawler:
+class InteractCrawler:
     def __init__(self, headers, local_database, prod_database, size):
         self.headers = headers
         self.local = local_database
@@ -180,7 +180,7 @@ if __name__ == '__main__':
     headers = {
         'User-Agent': "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36"
     }
-    crawler = Crawler(
+    crawler = InteractCrawler(
         headers=headers,
         local_database=MongoClient(os.environ['LOCAL_DB']),
         prod_database=MongoClient(os.environ['REAL_DB']),

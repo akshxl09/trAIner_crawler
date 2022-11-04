@@ -4,13 +4,15 @@ from tqdm import tqdm
 from pymongo import MongoClient
 from matplotlib import pyplot as plt
 from collections import defaultdict
+from controller import max_normalize, min_max_scaling
 
 
 class SparseMatrix:
     def __init__(self, database, file_name):
         self.db = database['solved_ac']
         self.file_name = file_name
-        self.file = open(f"{file_name}.csv", 'w', newline='', encoding='cp949')
+        self.path = f"{os.getcwd()}".replace('/app', '')
+        self.file = open(f"{self.path}/sparse_matrix/{file_name}.csv", 'w', newline='', encoding='cp949')
         self.wr = csv.writer(self.file)
         self.wr.writerow(['userId', 'problemId', 'value'])
         self.users = list(self.db['user'].find().sort('userNumber', 1))
@@ -21,8 +23,8 @@ class SparseMatrix:
         self.file.close()
 
 
-    def sparse_matrix_v1(self):
-        """interact가 있는 경우(시도한 이력이 있을 경우) 1, 없으면 0"""
+    def sparse_matrix_v1(self, true_score, false_score):
+        """interact가 있는 경우(시도한 이력이 있을 경우) true_score, 없으면 false_score"""
         users = self.users
         problems = self.problems
         user_ids = [user['userId'] for user in users]
@@ -44,42 +46,9 @@ class SparseMatrix:
             for problem in problems:
                 pbar.update(1)
                 if str(problem['problemId']) in interact[user['userId']].keys():
-                    rating = 1
+                    rating = true_score
                 else:
-                    rating = 0
-
-                self.wr.writerow(
-                    [user['userNumber'], problem['problemNumber'], rating]
-                )
-        pbar.close()
-    
-
-    def sparse_matrix_v1_1(self):
-        """interact가 있는 경우(시도한 이력이 있을 경우) 5, 없으면 1"""
-        users = self.users
-        problems = self.problems
-        user_ids = [user['userId'] for user in users]
-        problem_ids = [str(problem['problemId']) for problem in problems]
-
-        print('interact 집계중..')
-        result = list(self.db['interact'].find({
-            "$and": [
-                {"userId": {"$in": user_ids}},
-                {"problemId": {"$in": problem_ids}}
-            ]
-        }))
-        interact = defaultdict(dict)
-        for i in result:
-            interact[i['userId']][i['problemId']] = 1
-
-        pbar = tqdm(total=len(users)*len(problems))
-        for user in users:
-            for problem in problems:
-                pbar.update(1)
-                if str(problem['problemId']) in interact[user['userId']].keys():
-                    rating = 5
-                else:
-                    rating = 1
+                    rating = false_score
 
                 self.wr.writerow(
                     [user['userNumber'], problem['problemNumber'], rating]
@@ -203,6 +172,15 @@ class SparseMatrix:
         from pprint import pprint
         pprint(rating_dict)
 
+        tmp = []
+        for i in rating_dict:
+            tmp.append(rating_dict[i])
+        #tmp = sorted(tmp)
+        plt.plot(tmp)
+        plt.grid(True)
+        plt.show()
+
+
     
     def sparse_matrix_v4(self):
         """
@@ -264,6 +242,78 @@ class SparseMatrix:
         pbar.close()
         from pprint import pprint
         pprint(rating_dict)
+
+    
+    def sparse_matrix_v5(self, b, s, g, normalize):
+        """
+        바로 맞춘 유저는 0점, 실패할 때마다 rating 1씩 추가
+        난이도별로 기본점수 지급 -> 브론즈: b, 실버: s, 골드: g
+        + 정규화
+        """
+        users = list(self.db['user'].find())
+        problems = list(self.db['problem'].find({"isHotProblem": True}))
+        user_ids = [user['userId'] for user in users]
+        problem_ids = [str(problem['problemId']) for problem in problems]
+        level_map = {str(i['problemId']): i['level'] for i in problems}
+
+        print('interact 집계중..')
+        result = list(self.db['interact'].find({
+            "$and": [
+                {"userId": {"$in": user_ids}},
+                {"problemId": {"$in": problem_ids}}
+            ]
+        }))
+        print('interact 집계 완료')
+
+        interact = defaultdict(dict)
+        for i in result:
+            if i['userId'] not in interact.keys():
+                interact[i['userId']] = defaultdict(lambda: {'success': 0, 'fail': 0})
+            interact[i['userId']][i['problemId']]['success'] += i['result'] == "맞았습니다!!"
+            interact[i['userId']][i['problemId']]['fail'] += i['result'] != "맞았습니다!!"
+            if level_map[i['problemId']] <= 5:
+                interact[i['userId']][i['problemId']]['tier'] = "b"
+            elif level_map[i['problemId']] <= 10:
+                interact[i['userId']][i['problemId']]['tier'] = "s"
+            elif level_map[i['problemId']] <= 15:
+                interact[i['userId']][i['problemId']]['tier'] = "g"
+            else:
+                raise RuntimeError("Level Except")
+        
+        data = []
+        level_score = {'b': b, 's': s, 'g': g}
+        pbar = tqdm(total=len(users)*len(problems))
+        for user in users:
+            for problem in problems:
+                pbar.update(1)
+                if str(problem['problemId']) in interact[user['userId']].keys():
+                    #난이도별 기본점수 지급
+                    rating = level_score[interact[user['userId']][str(problem['problemId'])]['tier']]
+                    
+                    #바로 맞춘 경우
+                    if (
+                        interact[user['userId']][str(problem['problemId'])]['fail'] == 0 and
+                        interact[user['userId']][str(problem['problemId'])]['success'] >= 1
+                    ):
+                        rating += 0
+                    else:
+                        rating += interact[user['userId']][str(problem['problemId'])]['fail']
+                    data.append([user['userNumber'], problem['problemNumber'], rating])
+        #정규화
+        rating_lst = [x[2] for x in data]
+        if normalize == "max_normalize":
+            normalized_rating = max_normalize(rating_lst, 9)
+        elif normalize == "min_max_scaling":
+            normalized_rating = min_max_scaling(rating_lst, 6)
+        else:
+            raise ValueError('unknown normalization')
+        
+        for i, j in zip(data, normalized_rating):
+            self.wr.writerow(
+                [i[0], i[1], j]
+            )
+
+        pbar.close()
 
     
     def get_average_failure(self):
@@ -405,6 +455,7 @@ class SparseMatrix:
         problems = list(self.db['problem'].find({"isHotProblem": True}))
         user_ids = [user['userId'] for user in users]
         problem_ids = [str(problem['problemId']) for problem in problems]
+        level_map = {str(i['problemId']): i['level'] for i in problems}
 
         print('interact 집계중...')
         result = list(self.db['interact'].find({
@@ -414,49 +465,32 @@ class SparseMatrix:
             ]
         }))
         print('interact 집계 완료')
-
-        tier = {}
-        for i in range(1, 16):
-            if i in (1,2,3,4,5):
-                tier[i]='bronze'
-            elif i in (6,7,8,9,10):
-                tier[i]='silver'
-            else:
-                tier[i]='gold'
-        tier_map = {}
-        for i in problems:
-            tier_map[str(i['problemId'])] = tier[i['level']]
         
-        interact = defaultdict(dict)
+        interact = defaultdict(lambda: {'success': 0, 'fail': 0, "users": set()})
         for i in result:
-            if i['problemId'] not in interact.keys():
-                success = 0
-                fail = 0
-                if i['result'] != "맞았습니다!!":
-                    fail = 1
-                elif i['result'] == "맞았습니다!!":
-                    success = 1
-                interact[i['problemId']]['tier'] = tier_map[i['problemId']]
-                interact[i['problemId']]['success'] = success
-                interact[i['problemId']]['fail'] = fail
-                interact[i['problemId']]['user'] = set({i['userId']})
+            interact[i['problemId']]['success'] += i['result'] == "맞았습니다!!"
+            interact[i['problemId']]['fail'] += i['result'] != "맞았습니다!!"
+            interact[i['problemId']]['users'].add(i['userId'])
+            if level_map[i['problemId']] <= 5:
+                interact[i['problemId']]['tier'] = "bronze"
+            elif level_map[i['problemId']] <= 10:
+                interact[i['problemId']]['tier'] = "silver"
+            elif level_map[i['problemId']] <= 15:
+                interact[i['problemId']]['tier'] = "gold"
             else:
-                if i['result'] != "맞았습니다!!":
-                    interact[i['problemId']]['fail'] += 1
-                elif i['result'] == "맞았습니다!!":
-                    interact[i['problemId']]['success'] += 1
-                interact[i['problemId']]['user'].add(i['userId'])
+                raise RuntimeError("Level Except")
                 
         tier_dict = {}
         for t in ('bronze', 'silver', 'gold'):
             tier_dict[t] = {'sum_problem_avg': 0, 'problem_cnt': 0}
         
-        for i in interact.items():
-            tier_dict[i[1]['tier']]['problem_cnt'] += 1
-            tier_dict[i[1]['tier']]['sum_problem_avg'] += i[1]['fail'] / len(i[1]['user'])
+        for p_id in interact:
+            value = interact[p_id]
+            tier_dict[value['tier']]['problem_cnt'] += 1
+            tier_dict[value['tier']]['sum_problem_avg'] += value['fail'] / len(value['users'])
         
-        for t in ('bronze', 'silver', 'gold'):
-            print(f"{t}: {tier_dict[t]['sum_problem_avg']/tier_dict[t]['problem_cnt']}")
+        for tier in ('bronze', 'silver', 'gold'):
+            print(f"{tier}: {tier_dict[tier]['sum_problem_avg']/tier_dict[tier]['problem_cnt']}")
 
 
     def get_average_failure_tier_v3(self):
@@ -513,9 +547,11 @@ if __name__ == '__main__':
 
     matrix = SparseMatrix(
         database=MongoClient(os.environ['LOCAL_DB']),
-        file_name="sparse_matrix_v4"
+        file_name="sparse_matrix_v12"
     )
 
-    #matrix.sparse_matrix_v4()
+    #matrix.sparse_matrix_v1(5, 1)
+    #matrix.sparse_matrix_v3()
+    matrix.sparse_matrix_v5(0.6, 1.3, 2.0, 'min_max_scaling')
     #matrix.get_average_failure()
-    matrix.get_average_failure_tier_v2()
+    #matrix.get_average_failure_tier_v2()
