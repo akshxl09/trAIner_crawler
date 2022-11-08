@@ -4,7 +4,11 @@ from tqdm import tqdm
 from pymongo import MongoClient
 from matplotlib import pyplot as plt
 from collections import defaultdict
-from controller import max_normalize, min_max_scaling
+from controller import (
+    max_normalize, min_max_scaling, 
+    robust_scaling, standard_scaling,
+    custom_scaling_v1, custom_scaling_v2
+)
 
 
 class SparseMatrix:
@@ -299,12 +303,21 @@ class SparseMatrix:
                     else:
                         rating += interact[user['userId']][str(problem['problemId'])]['fail']
                     data.append([user['userNumber'], problem['problemNumber'], rating])
+        pbar.close()
         #정규화
         rating_lst = [x[2] for x in data]
         if normalize == "max_normalize":
             normalized_rating = max_normalize(rating_lst, 9)
         elif normalize == "min_max_scaling":
             normalized_rating = min_max_scaling(rating_lst, 6)
+        elif normalize == "robust_scaling":
+            normalized_rating = robust_scaling(rating_lst)
+        elif normalize == 'standard_scaling':
+            normalized_rating = standard_scaling(rating_lst)
+        elif normalize == 'custom_scaling_v1':
+            normalized_rating = custom_scaling_v1(rating_lst)
+        elif normalize == 'custom_scaling_v2':
+            normalized_rating = custom_scaling_v2(rating_lst, 10)
         else:
             raise ValueError('unknown normalization')
         
@@ -312,8 +325,6 @@ class SparseMatrix:
             self.wr.writerow(
                 [i[0], i[1], j]
             )
-
-        pbar.close()
 
     
     def get_average_failure(self):
@@ -547,11 +558,11 @@ if __name__ == '__main__':
 
     matrix = SparseMatrix(
         database=MongoClient(os.environ['LOCAL_DB']),
-        file_name="sparse_matrix_v12"
+        file_name="sparse_matrix_v12.2"
     )
 
     #matrix.sparse_matrix_v1(5, 1)
     #matrix.sparse_matrix_v3()
-    matrix.sparse_matrix_v5(0.6, 1.3, 2.0, 'min_max_scaling')
+    matrix.sparse_matrix_v5(0.6, 1.3, 2.0, 'custom_scaling_v2')
     #matrix.get_average_failure()
     #matrix.get_average_failure_tier_v2()

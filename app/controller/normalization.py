@@ -1,4 +1,5 @@
 import numpy as np
+from sklearn.preprocessing import RobustScaler, StandardScaler
 
 
 def max_normalize(value, target):
@@ -28,12 +29,63 @@ def min_max_scaling(value, decimal_point):
     return data
 
 
+def robust_scaling(value):
+    """
+    Robust Scaler
+    """
+    print(value)
+    value = [[v] for v in value]
+    transformer = RobustScaler()
+    transformer.fit(value)
+    result = transformer.transform(value)
+    return [v[0] for v in result]
+
+
+def standard_scaling(value):
+    """
+    Standard Scaler
+    """
+    value = [[v] for v in value]
+    transformer = StandardScaler()
+    transformer.fit(value)
+    result = transformer.transform(value)
+    return [v[0] for v in result]
+
+
+def custom_scaling_v1(value):
+    """
+    (value * 2) / 최대값
+    """
+    _max = max(value)
+    data = []
+    for v in value:
+        data.append((v*2)/_max)
+    return data
+
+
+def custom_scaling_v2(value, target):
+    """
+    value / target
+    """
+    data = []
+    for v in value:
+        if v > 10:
+            v = 10
+        data.append(v/target)
+    return data
+
+
 if __name__ == '__main__':
-    data = [1,2,6,4,7,4,1, 90]
-    result = max_normalize(data, 10)
-    print(result)
-    result = min_max_scaling(data, 5)
-    print(result)
+    data = [1,2,6,4,7,4,1,90]
+    # print("max_normalize")
+    # result = max_normalize(data, 10)
+    # print(result)
+    # print("min_max_scaling")
+    # result = min_max_scaling(data, 5)
+    # print(result)
+    # print("robust_scaling")
+    # result = standard_scaling(data)
+    # print(result)
 
 
 
